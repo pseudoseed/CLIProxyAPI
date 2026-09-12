@@ -90,6 +90,7 @@ func main() {
 	var tuiMode bool
 	var standalone bool
 	var localModel bool
+	var disableAntigravityUpdates bool
 
 	// Define command-line flags for different operation modes.
 	flag.BoolVar(&codexLogin, "codex-login", false, "Login to Codex using OAuth")
@@ -109,6 +110,7 @@ func main() {
 	flag.BoolVar(&tuiMode, "tui", false, "Start with terminal management UI")
 	flag.BoolVar(&standalone, "standalone", false, "In TUI mode, start an embedded local server")
 	flag.BoolVar(&localModel, "local-model", false, "Use embedded models.json and codex_client_models.json only, skip remote model catalog fetching")
+	flag.BoolVar(&disableAntigravityUpdates, "disable-antigravity-updates", false, "Disable background Antigravity version checks")
 
 	flag.CommandLine.Usage = func() {
 		out := flag.CommandLine.Output()
@@ -675,9 +677,7 @@ func main() {
 		if tuiMode {
 			if standalone {
 				// Standalone mode: start an embedded local server and connect TUI client to it.
-				managementasset.StartAutoUpdater(context.Background(), configFilePath)
-				misc.StartAntigravityVersionUpdater(context.Background())
-				startModelCatalogUpdaters(localModel, cfg.Home.Enabled)
+				startBackgroundUpdaters(configFilePath, localModel, cfg.Home.Enabled, disableAntigravityUpdates)
 				hook := tui.NewLogHook(2000)
 				hook.SetFormatter(&logging.LogFormatter{})
 				log.AddHook(hook)
@@ -749,12 +749,22 @@ func main() {
 			}
 		} else {
 			// Start the main proxy service
-			managementasset.StartAutoUpdater(context.Background(), configFilePath)
-			misc.StartAntigravityVersionUpdater(context.Background())
-			startModelCatalogUpdaters(localModel, cfg.Home.Enabled)
+			startBackgroundUpdaters(configFilePath, localModel, cfg.Home.Enabled, disableAntigravityUpdates)
 			cmd.StartServiceWithPluginHost(cfg, configFilePath, password, pluginHost, serverOptions...)
 		}
 	}
+}
+
+// startBackgroundUpdaters keeps optional remote metadata fetches separate from
+// the service's credential refresh and request execution lifecycle.
+func startBackgroundUpdaters(configFilePath string, localModel, homeEnabled, disableAntigravityUpdates bool) {
+	managementasset.StartAutoUpdater(context.Background(), configFilePath)
+	if disableAntigravityUpdates {
+		log.Info("Background Antigravity version checks disabled")
+	} else {
+		misc.StartAntigravityVersionUpdater(context.Background())
+	}
+	startModelCatalogUpdaters(localModel, homeEnabled)
 }
 
 // modelCatalogUpdaterPlan decides which remote model catalogs should refresh.

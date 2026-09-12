@@ -317,6 +317,17 @@ func isKnownDefaultValue(path []string, node *yaml.Node) bool {
 		return false
 	}
 
+	// Preserve a new routing map containing an explicit affinity setting, even
+	// when all its remaining children are zero-valued after default pruning.
+	if strings.Join(path, ".") == "routing" && findMapKeyIndex(node, "session-affinity") >= 0 {
+		return false
+	}
+
+	// Explicit false must survive saving now that affinity defaults to true.
+	if strings.Join(path, ".") == "routing.session-affinity" {
+		return false
+	}
+
 	// First check if it's a zero value
 	if isZeroValueNode(node) {
 		return true
@@ -339,7 +350,7 @@ func isKnownDefaultValue(path []string, node *yaml.Node) bool {
 		case "plugins.dir":
 			return node.Value == "plugins"
 		case "routing.strategy":
-			return node.Value == "round-robin"
+			return node.Value == "soonest-reset"
 		}
 	}
 

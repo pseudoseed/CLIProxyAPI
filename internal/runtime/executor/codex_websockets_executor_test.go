@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -3297,5 +3298,55 @@ func TestCodexWebsockets_SendErrorLogsSessionObject(t *testing.T) {
 	}
 	if !strings.Contains(logOutput, "reason=send_error") {
 		t.Fatalf("expected reason=send_error in log output, got: %s", logOutput)
+	}
+}
+
+func TestCodexAutoExecutorOAuthUsesWebsocketForHTTPClients(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%v", stream), func(t *testing.T) {
+			upgraded := make(chan struct{}, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				upgrader := websocket.Upgrader{}
+				conn, errUpgrade := upgrader.Upgrade(w, r, nil)
+				if errUpgrade != nil {
+					t.Errorf("expected websocket upgrade: %v", errUpgrade)
+					return
+				}
+				defer func() { _ = conn.Close() }()
+				if _, _, errRead := conn.ReadMessage(); errRead != nil {
+					t.Errorf("read: %v", errRead)
+					return
+				}
+				upgraded <- struct{}{}
+				if errWrite := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.completed","response":{"id":"resp-default","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}`)); errWrite != nil {
+					t.Errorf("write: %v", errWrite)
+				}
+			}))
+			defer server.Close()
+			executor := NewCodexAutoExecutor(&config.Config{SDKConfig: config.SDKConfig{DisableImageGeneration: config.DisableImageGenerationAll}})
+			auth := &cliproxyauth.Auth{ID: "subscription-default", Provider: "codex", Attributes: map[string]string{cliproxyauth.AttributeAuthKind: cliproxyauth.AuthKindOAuth, "base_url": server.URL}, Metadata: map[string]any{"access_token": "test"}}
+			request := cliproxyexecutor.Request{Model: "gpt-5-codex", Payload: []byte(`{"model":"gpt-5-codex","input":[]}`)}
+			opts := cliproxyexecutor.Options{SourceFormat: sdktranslator.FromString("codex")}
+			if stream {
+				result, errExecute := executor.ExecuteStream(context.Background(), auth, request, opts)
+				if errExecute != nil {
+					t.Fatal(errExecute)
+				}
+				for chunk := range result.Chunks {
+					if chunk.Err != nil {
+						t.Fatal(chunk.Err)
+					}
+				}
+			} else {
+				if _, errExecute := executor.Execute(context.Background(), auth, request, opts); errExecute != nil {
+					t.Fatal(errExecute)
+				}
+			}
+			select {
+			case <-upgraded:
+			default:
+				t.Fatal("no websocket request")
+			}
+		})
 	}
 }
