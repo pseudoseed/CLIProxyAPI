@@ -109,6 +109,8 @@ plugins:
       mode: "safe" # enum example: safe, fast
 
 # When true, disable high-overhead request logging and HTTP middleware features to reduce per-request memory usage under high concurrency.
+# This also disables request/response body capture and error request files. Restart after changing it.
+# request-log: false alone still permits error request files containing conversation bodies.
 commercial-mode: false
 
 # When true, write application logs to rotating files instead of stdout
@@ -214,7 +216,7 @@ quota-exceeded:
 
 # Routing strategy for selecting credentials when multiple match.
 routing:
-  strategy: "round-robin" # round-robin (default), weighted-round-robin, fill-first
+  strategy: "soonest-reset" # soonest-reset (default), round-robin, weighted-round-robin, fill-first
   # weighted-round-robin uses each credential's integer weight (default 1, maximum 1,000,000).
   # Non-positive weights exclude the credential while this strategy is active.
   # For OAuth/file credentials, add a top-level numeric "weight" field to the auth JSON.
@@ -226,7 +228,7 @@ routing:
   # An established binding outranks credential priority: once a session is bound, that
   # credential is kept even if a higher-priority credential recovers. Credential priority
   # still decides cold bindings, requests without a session, and post-failover rebinding.
-  session-affinity: false # default: false
+  session-affinity: true # default: true
   # How long session-to-auth bindings are retained. Default: 1h
   session-affinity-ttl: "1h"
   # When true (default), subagents (child sessions with parent references) inherit and bind

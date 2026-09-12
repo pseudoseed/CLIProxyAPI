@@ -410,7 +410,10 @@ func canonicalModelKey(model string) string {
 	return modelName
 }
 
-func authWebsocketsEnabled(auth *Auth) bool {
+func authWebsocketsEnabled(auth *Auth) bool { return WebsocketsEnabled(auth) }
+
+// WebsocketsEnabled honors explicit overrides and defaults Codex OAuth accounts to WebSocket.
+func WebsocketsEnabled(auth *Auth) bool {
 	if auth == nil {
 		return false
 	}
@@ -422,12 +425,10 @@ func authWebsocketsEnabled(auth *Auth) bool {
 			}
 		}
 	}
-	if len(auth.Metadata) == 0 {
-		return false
-	}
+
 	raw, ok := auth.Metadata["websockets"]
 	if !ok || raw == nil {
-		return false
+		return auth.Provider == "codex" && auth.AuthKind() == AuthKindOAuth
 	}
 	switch v := raw.(type) {
 	case bool:
